@@ -113,6 +113,395 @@ function renderData(platform, data) {
   if (postsLink) {
     renderLinkButtonBlock(postsLink.label, postsLink.url);
   }
+
+  if (platform === "Reddit" && data["Benutzername"]) {
+    renderRedditArchiveBlock(data);
+  }
+
+  if (platform === "Bluesky" && data["Handle"]) {
+    renderBlueskyArchiveBlock(data);
+  }
+
+  if (platform === "Mastodon" && data["Benutzername"]) {
+    renderMastodonArchiveBlock(data);
+  }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildRedditArchiveHtml(username, profileData, items) {
+  const generatedAt = new Date().toLocaleString("de-DE");
+  const profileRows = Object.entries(profileData || {})
+    .filter(([key]) => key !== "Profilbild")
+    .map(([key, value]) => `<tr><td class="key">${escapeHtml(key)}</td><td>${escapeHtml(value)}</td></tr>`)
+    .join("");
+
+  const itemsHtml = items
+    .map((item) => {
+      const date = item.created_utc ? new Date(item.created_utc * 1000).toLocaleString("de-DE") : "";
+      const permalink = item.permalink ? `https://www.reddit.com${item.permalink}` : null;
+      if (item.kind === "t3") {
+        const body = item.selftext ? `<p>${escapeHtml(item.selftext).replace(/\n/g, "<br>")}</p>` : "";
+        return `<article class="post">
+          <div class="meta">📝 Beitrag in r/${escapeHtml(item.subreddit || "")} · ${date} · ${item.score ?? 0} Punkte · ${item.num_comments ?? 0} Kommentare</div>
+          <h3>${permalink ? `<a href="${permalink}" target="_blank">${escapeHtml(item.title || "")}</a>` : escapeHtml(item.title || "")}</h3>
+          ${body}
+        </article>`;
+      }
+      return `<article class="comment">
+        <div class="meta">💬 Kommentar in r/${escapeHtml(item.subreddit || "")} · ${date} · ${item.score ?? 0} Punkte${item.link_title ? ` · zu „${escapeHtml(item.link_title)}"` : ""}</div>
+        <p>${escapeHtml(item.body || "").replace(/\n/g, "<br>")}</p>
+        ${permalink ? `<a class="permalink" href="${permalink}" target="_blank">Zum Original →</a>` : ""}
+      </article>`;
+    })
+    .join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Reddit-Sicherung u/${escapeHtml(username)} – ${generatedAt}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; color: #1a1a1b; }
+  h1 { font-size: 22px; }
+  table { border-collapse: collapse; margin: 12px 0 24px; }
+  td { padding: 3px 10px 3px 0; vertical-align: top; }
+  td.key { color: #666; }
+  article { border: 1px solid #ddd; border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; }
+  article.comment { background: #f8f9fa; }
+  .meta { font-size: 12px; color: #666; margin-bottom: 6px; }
+  h3 { margin: 0 0 6px; }
+  a.permalink { font-size: 12px; }
+  footer { margin-top: 24px; font-size: 11px; color: #999; }
+</style>
+</head>
+<body>
+  <h1>Reddit-Sicherung: u/${escapeHtml(username)}</h1>
+  <table>${profileRows}</table>
+  <p>${items.length} Beiträge/Kommentare gesichert, gesammelt am ${generatedAt}.</p>
+  ${itemsHtml}
+  <footer>Erstellt mit Social ID Viewer. Hinweis: Reddits Listing-API liefert in der Regel nur die letzten ca. 1000 Einträge eines Profils.</footer>
+</body>
+</html>`;
+}
+
+function renderRedditArchiveBlock(profileData) {
+  const block = document.createElement("div");
+  block.className = "image-block";
+
+  const btn = document.createElement("button");
+  btn.className = "download-btn";
+  btn.textContent = "Profil als HTML sichern";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Sammle Beiträge… (kann etwas dauern, Popup bitte offen lassen)";
+    try {
+      const tab = await getActiveTab();
+      const response = await chrome.tabs.sendMessage(tab.id, { type: "BUILD_REDDIT_ARCHIVE" });
+      if (!response || !response.success) {
+        throw new Error((response && response.error) || "Unbekannter Fehler.");
+      }
+      const html = buildRedditArchiveHtml(response.username, profileData, response.items);
+      const safeName = response.username.replace(/[^a-zA-Z0-9]+/g, "_");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      await downloadHtmlBlob(html, `reddit_${safeName}_backup_${dateStr}.html`);
+      btn.textContent = `Fertig: ${response.items.length} Beiträge/Kommentare gesichert`;
+    } catch (e) {
+      btn.textContent = `Fehler: ${e.message} – erneut versuchen`;
+      btn.disabled = false;
+    }
+  });
+  block.appendChild(btn);
+  contentEl.appendChild(block);
+}
+
+function downloadHtmlBlob(html, filename) {
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  return chrome.downloads.download({ url, filename, saveAs: true });
+}
+
+function buildBlueskyArchiveHtml(handle, profileData, items) {
+  const generatedAt = new Date().toLocaleString("de-DE");
+  const profileRows = Object.entries(profileData || {})
+    .filter(([key]) => !["Profilbild", "Banner"].includes(key))
+    .map(([key, value]) => `<tr><td class="key">${escapeHtml(key)}</td><td>${escapeHtml(value)}</td></tr>`)
+    .join("");
+
+  const itemsHtml = items
+    .map((item) => {
+      const post = item.post;
+      if (!post) return "";
+      const record = post.record || {};
+      const date = record.createdAt ? new Date(record.createdAt).toLocaleString("de-DE") : "";
+      const text = escapeHtml(record.text || "").replace(/\n/g, "<br>");
+      const isRepost = !!item.reason;
+      const counts = `${post.likeCount ?? 0} Likes · ${post.repostCount ?? 0} Reposts · ${post.replyCount ?? 0} Antworten`;
+
+      let mediaHtml = "";
+      if (post.embed && Array.isArray(post.embed.images)) {
+        mediaHtml = post.embed.images
+          .map((img) => `<img src="${img.fullsize}" alt="${escapeHtml(img.alt || "")}" loading="lazy">`)
+          .join("");
+      } else if (post.embed && post.embed.external) {
+        mediaHtml = `<div class="embed-link"><a href="${post.embed.external.uri}" target="_blank">${escapeHtml(post.embed.external.title || post.embed.external.uri)}</a></div>`;
+      }
+
+      const likersHtml =
+        item.likers && item.likers.length
+          ? `<div class="likers">❤️ Geliked von: ${item.likers.map((h) => escapeHtml(h)).join(", ")}</div>`
+          : "";
+
+      const repliesHtml =
+        item.replies && item.replies.length
+          ? `<div class="replies">${item.replies
+              .map(
+                (r) =>
+                  `<div class="reply"><strong>@${escapeHtml(r.handle)}</strong> (${r.createdAt ? new Date(r.createdAt).toLocaleString("de-DE") : ""}): ${escapeHtml(r.text).replace(/\n/g, "<br>")} <span class="meta">${r.likeCount ?? 0} Likes</span></div>`
+              )
+              .join("")}</div>`
+          : "";
+
+      return `<article class="post">
+        <div class="meta">${isRepost ? "🔁 Repost · " : ""}${date} · ${counts}</div>
+        <p>${text}</p>
+        ${mediaHtml}
+        ${likersHtml}
+        ${repliesHtml}
+      </article>`;
+    })
+    .join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Bluesky-Sicherung @${escapeHtml(handle)} – ${generatedAt}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; color: #0f1419; }
+  h1 { font-size: 22px; }
+  table { border-collapse: collapse; margin: 12px 0 24px; }
+  td { padding: 3px 10px 3px 0; vertical-align: top; }
+  td.key { color: #666; }
+  article { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+  .meta { font-size: 12px; color: #666; margin-bottom: 6px; }
+  img { max-width: 100%; border-radius: 6px; margin-top: 6px; display: block; }
+  .likers { font-size: 12px; margin-top: 8px; color: #555; }
+  .replies { margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px; }
+  .reply { font-size: 13px; margin-bottom: 6px; }
+  .reply .meta { display: inline; }
+  .embed-link { margin-top: 6px; font-size: 13px; }
+  footer { margin-top: 24px; font-size: 11px; color: #999; }
+</style>
+</head>
+<body>
+  <h1>Bluesky-Sicherung: @${escapeHtml(handle)}</h1>
+  <table>${profileRows}</table>
+  <p>${items.length} Beiträge gesichert (inkl. Antworten & Likern, soweit verfügbar), gesammelt am ${generatedAt}.</p>
+  ${itemsHtml}
+  <footer>Erstellt mit Social ID Viewer. Begrenzt auf die letzten 100 Beiträge pro Sicherung.</footer>
+</body>
+</html>`;
+}
+
+function renderBlueskyArchiveBlock(profileData) {
+  const block = document.createElement("div");
+  block.className = "image-block";
+
+  const btn = document.createElement("button");
+  btn.className = "download-btn";
+  btn.textContent = "Profil als HTML sichern";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Sammle Beiträge, Antworten & Liker… (kann etwas dauern, Popup bitte offen lassen)";
+    try {
+      const tab = await getActiveTab();
+      const response = await chrome.tabs.sendMessage(tab.id, { type: "BUILD_BLUESKY_ARCHIVE" });
+      if (!response || !response.success) {
+        throw new Error((response && response.error) || "Unbekannter Fehler.");
+      }
+      const html = buildBlueskyArchiveHtml(response.handle, profileData, response.items);
+      const safeName = response.handle.replace(/[^a-zA-Z0-9]+/g, "_");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      await downloadHtmlBlob(html, `bluesky_${safeName}_backup_${dateStr}.html`);
+      btn.textContent = `Fertig: ${response.items.length} Beiträge gesichert`;
+    } catch (e) {
+      btn.textContent = `Fehler: ${e.message} – erneut versuchen`;
+      btn.disabled = false;
+    }
+  });
+  block.appendChild(btn);
+  contentEl.appendChild(block);
+}
+
+// Mastodon hat keinen festen content_scripts-Eintrag (siehe mastodonProbe
+// weiter unten), daher läuft die Sicherung über dieselbe activeTab +
+// scripting.executeScript-Technik statt über chrome.tabs.sendMessage.
+async function mastodonArchiveProbe() {
+  function stripHtml(html) {
+    const div = document.createElement("div");
+    div.innerHTML = html || "";
+    return div.textContent.trim();
+  }
+  const match = location.pathname.match(/^\/@([^/]+)\/?$/);
+  if (!match) {
+    return { success: false, error: "Keine Mastodon-Profil-URL erkannt." };
+  }
+  const username = match[1];
+  try {
+    const lookupRes = await fetch(`https://${location.hostname}/api/v1/accounts/lookup?acct=${encodeURIComponent(username)}`);
+    if (!lookupRes.ok) {
+      return { success: false, error: `Account-Lookup fehlgeschlagen (Status ${lookupRes.status}).` };
+    }
+    const account = await lookupRes.json();
+
+    const MAX_POSTS = 100;
+    const statuses = [];
+    let maxId = null;
+    while (statuses.length < MAX_POSTS) {
+      const url = `https://${location.hostname}/api/v1/accounts/${account.id}/statuses?limit=40&exclude_replies=false${maxId ? `&max_id=${maxId}` : ""}`;
+      const res = await fetch(url);
+      if (!res.ok) break;
+      const batch = await res.json();
+      if (!batch.length) break;
+      statuses.push(...batch);
+      maxId = batch[batch.length - 1].id;
+      if (batch.length < 40) break;
+    }
+    statuses.length = Math.min(statuses.length, MAX_POSTS);
+
+    for (const status of statuses) {
+      try {
+        const ctxRes = await fetch(`https://${location.hostname}/api/v1/statuses/${status.id}/context`);
+        if (ctxRes.ok) {
+          const ctx = await ctxRes.json();
+          status._replies = (ctx.descendants || []).map((d) => ({
+            handle: d.account ? d.account.acct : "?",
+            text: stripHtml(d.content),
+            createdAt: d.created_at,
+            likeCount: d.favourites_count ?? 0,
+          }));
+        }
+      } catch (e) {
+        // Kontext ggf. nicht verfügbar – kein Abbruch der gesamten Sicherung
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+
+    return { success: true, username: account.username, hostname: location.hostname, statuses };
+  } catch (e) {
+    return { success: false, error: "Anfrage fehlgeschlagen (Netzwerk)." };
+  }
+}
+
+function buildMastodonArchiveHtml(username, hostname, profileData, statuses) {
+  const generatedAt = new Date().toLocaleString("de-DE");
+  const profileRows = Object.entries(profileData || {})
+    .filter(([key]) => !["Profilbild", "Banner"].includes(key))
+    .map(([key, value]) => `<tr><td class="key">${escapeHtml(key)}</td><td>${escapeHtml(value)}</td></tr>`)
+    .join("");
+
+  const div = document.createElement("div");
+  function stripHtmlLocal(html) {
+    div.innerHTML = html || "";
+    return div.textContent.trim();
+  }
+
+  const itemsHtml = statuses
+    .map((status) => {
+      const date = status.created_at ? new Date(status.created_at).toLocaleString("de-DE") : "";
+      const text = escapeHtml(stripHtmlLocal(status.content)).replace(/\n/g, "<br>");
+      const counts = `${status.favourites_count ?? 0} Likes · ${status.reblogs_count ?? 0} Boosts · ${status.replies_count ?? 0} Antworten`;
+      const mediaHtml = (status.media_attachments || [])
+        .map((m) => (m.type === "image" ? `<img src="${m.url}" alt="${escapeHtml(m.description || "")}" loading="lazy">` : `<div class="embed-link"><a href="${m.url}" target="_blank">Medien-Anhang (${escapeHtml(m.type)})</a></div>`))
+        .join("");
+      const repliesHtml =
+        status._replies && status._replies.length
+          ? `<div class="replies">${status._replies
+              .map(
+                (r) =>
+                  `<div class="reply"><strong>@${escapeHtml(r.handle)}</strong> (${r.createdAt ? new Date(r.createdAt).toLocaleString("de-DE") : ""}): ${escapeHtml(r.text).replace(/\n/g, "<br>")} <span class="meta">${r.likeCount} Likes</span></div>`
+              )
+              .join("")}</div>`
+          : "";
+      return `<article class="post">
+        <div class="meta">${date} · ${counts}</div>
+        <p>${text}</p>
+        ${mediaHtml}
+        ${repliesHtml}
+        <a class="permalink" href="${status.url}" target="_blank">Zum Original →</a>
+      </article>`;
+    })
+    .join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Mastodon-Sicherung @${escapeHtml(username)}@${escapeHtml(hostname)} – ${generatedAt}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 760px; margin: 24px auto; padding: 0 16px; color: #1a1a2e; }
+  h1 { font-size: 22px; }
+  table { border-collapse: collapse; margin: 12px 0 24px; }
+  td { padding: 3px 10px 3px 0; vertical-align: top; }
+  td.key { color: #666; }
+  article { border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+  .meta { font-size: 12px; color: #666; margin-bottom: 6px; }
+  img { max-width: 100%; border-radius: 6px; margin-top: 6px; display: block; }
+  .replies { margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px; }
+  .reply { font-size: 13px; margin-bottom: 6px; }
+  a.permalink { font-size: 12px; }
+  footer { margin-top: 24px; font-size: 11px; color: #999; }
+</style>
+</head>
+<body>
+  <h1>Mastodon-Sicherung: @${escapeHtml(username)}@${escapeHtml(hostname)}</h1>
+  <table>${profileRows}</table>
+  <p>${statuses.length} Beiträge gesichert (inkl. Antworten, soweit verfügbar), gesammelt am ${generatedAt}.</p>
+  ${itemsHtml}
+  <footer>Erstellt mit Social ID Viewer. Begrenzt auf die letzten 100 Beiträge pro Sicherung. Wer einen Beitrag geliked hat, ist über die Mastodon-API meist nicht öffentlich einsehbar.</footer>
+</body>
+</html>`;
+}
+
+function renderMastodonArchiveBlock(profileData) {
+  const block = document.createElement("div");
+  block.className = "image-block";
+
+  const btn = document.createElement("button");
+  btn.className = "download-btn";
+  btn.textContent = "Profil als HTML sichern";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    btn.textContent = "Sammle Beiträge & Antworten… (kann etwas dauern, Popup bitte offen lassen)";
+    try {
+      const tab = await getActiveTab();
+      const [injection] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: mastodonArchiveProbe,
+      });
+      const response = injection && injection.result;
+      if (!response || !response.success) {
+        throw new Error((response && response.error) || "Unbekannter Fehler.");
+      }
+      const html = buildMastodonArchiveHtml(response.username, response.hostname, profileData, response.statuses);
+      const safeName = response.username.replace(/[^a-zA-Z0-9]+/g, "_");
+      const dateStr = new Date().toISOString().slice(0, 10);
+      await downloadHtmlBlob(html, `mastodon_${safeName}_backup_${dateStr}.html`);
+      btn.textContent = `Fertig: ${response.statuses.length} Beiträge gesichert`;
+    } catch (e) {
+      btn.textContent = `Fehler: ${e.message} – erneut versuchen`;
+      btn.disabled = false;
+    }
+  });
+  block.appendChild(btn);
+  contentEl.appendChild(block);
 }
 
 // Reddit, Bluesky, Mastodon und X bieten – anders als Facebook – einen

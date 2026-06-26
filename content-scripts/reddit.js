@@ -49,3 +49,46 @@ async function extractReddit() {
 }
 
 registerExtractor("Reddit", extractReddit);
+
+// Sicherung: sammelt alle Beiträge/Kommentare über die öffentliche
+// overview.json-Listing-API (paginiert über "after"). Im Gegensatz zum
+// Scrollen der Live-Seite gibt es hier keine Virtualisierung – jedes
+// gesammelte Element bleibt erhalten, unabhängig davon, was im DOM gerade
+// gerendert ist. Reddits Listing-API liefert ohnehin meist nur die letzten
+// ca. 1000 Einträge eines Profils; MAX_PAGES ist daher ein großzügiges, aber
+// endliches Sicherheitslimit.
+async function collectRedditArchive() {
+  const username = getRedditUsernameFromUrl();
+  if (!username) {
+    throw new Error("Kein Reddit-Nutzerprofil auf dieser Seite erkannt.");
+  }
+
+  const items = [];
+  let after = null;
+  const MAX_PAGES = 20;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const url = `https://www.reddit.com/user/${encodeURIComponent(username)}/overview.json?limit=100&raw_json=1${after ? `&after=${after}` : ""}`;
+    const response = await fetch(url, { credentials: "include" });
+    if (!response.ok) {
+      throw new Error(`Reddit-API antwortete mit Status ${response.status}.`);
+    }
+    const json = await response.json();
+    const children = (json && json.data && json.data.children) || [];
+    children.forEach((child) => items.push({ kind: child.kind, ...child.data }));
+
+    after = json.data ? json.data.after : null;
+    if (!after || children.length === 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
+  return { username, items };
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "BUILD_REDDIT_ARCHIVE") return;
+  collectRedditArchive()
+    .then((result) => sendResponse({ success: true, ...result }))
+    .catch((err) => sendResponse({ success: false, error: err && err.message ? err.message : String(err) }));
+  return true;
+});

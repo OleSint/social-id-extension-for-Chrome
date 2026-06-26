@@ -100,6 +100,48 @@ Bei Mastodon und X ist das deutlich zuverlässiger als eine Namenssuche, weil
 der Nutzername eindeutig ist (anders als bei Facebook, wo Anzeigenamen
 mehrdeutig sein können).
 
+## Profil-Sicherung als HTML (aktuell: Reddit, Bluesky, Mastodon)
+
+Bei diesen drei Plattformen erscheint ein Button „Profil als HTML sichern".
+Klick darauf sammelt alle Beiträge des Profils über die jeweils öffentliche
+API (nicht durch Klonen der Live-Seite) und baut daraus ein eigenständiges,
+selbst gestaltetes HTML-Dokument (eigenes CSS, keine externen Ressourcen
+außer entfernt verlinkten Bildern), das per Speicherdialog herunterladen
+wird.
+
+Warum eine eigene API-Sammlung statt einfach die Seite zu speichern: Viele
+moderne Profilseiten laden Beiträge per Infinite-Scroll und entfernen ältere
+Einträge wieder aus dem DOM, sobald man weiter nach unten scrollt
+("Virtualisierung"). Ein simples "Seite als HTML speichern" am Ende des
+Scrollens würde daher nur die untersten Beiträge enthalten. Die Daten-APIs
+dieser drei Plattformen liefern dagegen die komplette Liste direkt und
+zuverlässig, unabhängig vom Render-Zustand der Seite.
+
+Das fertige HTML lässt sich in jedem Browser ohne Internetverbindung öffnen
+und über den normalen Druckdialog auch als PDF speichern. Während der
+Sammlung sollte das Popup offen bleiben, da der Vorgang – besonders bei
+Bluesky und Mastodon, wo pro Beitrag weitere Anfragen für Antworten/Liker
+nötig sind – mehrere Sekunden bis über eine Minute dauern kann.
+
+| Plattform | Quelle | Enthält |
+|-----------|--------|---------|
+| Reddit    | `overview.json`-Listing (paginiert über `after`, max. 20 Seiten à 100) | Beiträge & Kommentare, Subreddit, Datum, Punkte, Link zum Original |
+| Bluesky   | `getAuthorFeed` (max. 100 Beiträge) + pro Beitrag `getPostThread` (Antworten) + `getLikes` (Liker) | Beiträge inkl. Medien, Like-/Repost-/Antwort-Zahlen, vollständige Antworten **und wer geliked hat** |
+| Mastodon  | `/accounts/:id/statuses` (max. 100 Beiträge) + pro Beitrag `/statuses/:id/context` (Antworten) | Beiträge inkl. Medien, Like-/Boost-/Antwort-Zahlen, vollständige Antworten – wer geliked hat, ist bei den meisten Instanzen nicht öffentlich einsehbar |
+
+Bekannte Begrenzungen: Reddit liefert ohnehin meist nur die letzten ca. 1000
+Einträge eines Profils (Plattform-Limit, keine Beschränkung der Extension);
+bei Bluesky/Mastodon ist die Sicherung hier bewusst auf die letzten 100
+Beiträge gekappt, um die Anzahl der Anfragen (und damit Lade-/Wartezeit)
+begrenzt zu halten.
+
+Dieselbe Technik (eigene API/Daten sammeln statt Live-Seite klonen) ist für
+weitere Plattformen geplant, sobald sie sich als technisch sinnvoll
+herausstellt. X/Twitter ist technisch ähnlich machbar (gleiche interne API
+wie die Profil-Extraktion), aber deutlich bruchanfälliger; bei Instagram,
+Threads, TikTok und Pinterest gibt es keine vergleichbar stabile offene API
+für vollständige Beitragslisten samt Kommentaren.
+
 ## Funktionsweise
 
 - Pro Plattform gibt es ein eigenes Content-Script (`content-scripts/*.js`),

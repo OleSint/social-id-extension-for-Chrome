@@ -46,3 +46,92 @@ async function extractBluesky() {
 }
 
 registerExtractor("Bluesky", extractBluesky);
+
+// Sicherung: AT Protocol erlaubt es als einzige hier unterstützte Plattform,
+// nicht nur die eigenen Beiträge, sondern auch Antworten UND wer einen Post
+// geliked hat öffentlich abzurufen – alles ohne Login.
+async function collectBlueskyArchive() {
+  const actor = getBlueskyActorFromUrl();
+  if (!actor) {
+    throw new Error("Kein Bluesky-Profil auf dieser Seite erkannt.");
+  }
+
+  const profileRes = await fetch(
+    `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`
+  );
+  if (!profileRes.ok) {
+    throw new Error(`Bluesky-API antwortete mit Status ${profileRes.status}.`);
+  }
+  const profile = await profileRes.json();
+  const did = profile.did;
+
+  const MAX_POSTS = 100;
+  const items = [];
+  let cursor = null;
+  while (items.length < MAX_POSTS) {
+    const url = `https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${encodeURIComponent(did)}&limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const res = await fetch(url);
+    if (!res.ok) break;
+    const json = await res.json();
+    const feed = json.feed || [];
+    items.push(...feed);
+    cursor = json.cursor;
+    if (!cursor || feed.length === 0) break;
+  }
+  items.length = Math.min(items.length, MAX_POSTS);
+
+  function flattenReplies(node, out) {
+    if (!node || !node.replies) return out;
+    node.replies.forEach((replyNode) => {
+      const p = replyNode.post;
+      if (p && p.record) {
+        out.push({
+          handle: p.author ? p.author.handle : "?",
+          text: p.record.text || "",
+          createdAt: p.record.createdAt,
+          likeCount: p.likeCount ?? 0,
+        });
+      }
+      flattenReplies(replyNode, out);
+    });
+    return out;
+  }
+
+  for (const item of items) {
+    const post = item.post;
+    if (!post) continue;
+    try {
+      const likesRes = await fetch(
+        `https://public.api.bsky.app/xrpc/app.bsky.feed.getLikes?uri=${encodeURIComponent(post.uri)}&limit=100`
+      );
+      if (likesRes.ok) {
+        const likesJson = await likesRes.json();
+        item.likers = (likesJson.likes || []).map((l) => l.actor.handle);
+      }
+    } catch (e) {
+      // Likes ggf. nicht verfügbar – kein Abbruch der gesamten Sicherung
+    }
+    try {
+      const threadRes = await fetch(
+        `https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(post.uri)}&depth=6`
+      );
+      if (threadRes.ok) {
+        const threadJson = await threadRes.json();
+        item.replies = flattenReplies(threadJson.thread, []);
+      }
+    } catch (e) {
+      // Thread ggf. nicht verfügbar – kein Abbruch der gesamten Sicherung
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+
+  return { did, handle: profile.handle || actor, items };
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "BUILD_BLUESKY_ARCHIVE") return;
+  collectBlueskyArchive()
+    .then((result) => sendResponse({ success: true, ...result }))
+    .catch((err) => sendResponse({ success: false, error: err && err.message ? err.message : String(err) }));
+  return true;
+});
