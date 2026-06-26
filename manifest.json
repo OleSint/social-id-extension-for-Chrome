@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Social ID Viewer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Zeigt Profil-ID und weitere verfügbare Infos zum aktuell geöffneten Social-Media-Profil",
   "permissions": ["activeTab", "scripting", "storage", "downloads"],
   "host_permissions": [
