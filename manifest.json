@@ -1,0 +1,78 @@
+{
+  "manifest_version": 3,
+  "name": "Social ID Viewer",
+  "version": "0.1.0",
+  "description": "Zeigt Profil-ID und weitere verfügbare Infos zum aktuell geöffneten Social-Media-Profil",
+  "permissions": ["activeTab", "scripting", "storage", "downloads"],
+  "host_permissions": [
+    "https://public.api.bsky.app/*",
+    "https://api.github.com/*",
+    "https://gql.twitch.tv/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Social ID Viewer"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.instagram.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/instagram.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://twitter.com/*", "https://x.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/twitter.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.tiktok.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/tiktok.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.facebook.com/*", "https://m.facebook.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/facebook.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/youtube.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.reddit.com/*", "https://old.reddit.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/reddit.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://bsky.app/*"],
+      "js": ["content-scripts/common.js", "content-scripts/bluesky.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/github.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.twitch.tv/*"],
+      "js": ["content-scripts/common.js", "content-scripts/twitch.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.pinterest.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/pinterest.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.threads.net/*", "https://www.threads.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/threads.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://steamcommunity.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/steam.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
