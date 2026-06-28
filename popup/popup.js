@@ -657,6 +657,157 @@ async function tryMastodonFallback(tab) {
   } catch (e) {
     renderHint("Diese Plattform wird (noch) nicht unterstützt.");
   }
+  renderMastodonIdOpenerBlock(tab);
+}
+
+// "Profil per ID öffnen": auf Plattformen, bei denen man die ID nicht einfach
+// in die URL einsetzen kann (z. B. Instagram, X), bräuchte es zusätzlich eine
+// zuverlässige ID→Username-Auflösung. Hier sind nur die Plattformen
+// aufgenommen, bei denen das entweder gar nicht nötig ist (ID direkt in der
+// URL nutzbar) oder über eine stabile, öffentliche API zuverlässig
+// funktioniert.
+function getIdOpenerConfig(hostname) {
+  if (hostname === "www.facebook.com" || hostname === "m.facebook.com") {
+    return {
+      platform: "Facebook",
+      placeholder: "Numerische ID (z. B. 100012345678901)",
+      build: (id) => `https://www.facebook.com/profile.php?id=${encodeURIComponent(id)}`,
+    };
+  }
+  if (hostname === "www.instagram.com") {
+    return {
+      platform: "Instagram",
+      placeholder: "Numerische User-ID",
+      build: (id) => `https://www.instagram.com/uid/${encodeURIComponent(id)}`,
+    };
+  }
+  if (hostname === "www.youtube.com") {
+    return {
+      platform: "YouTube",
+      placeholder: "Channel-ID (UC…)",
+      build: (id) => `https://www.youtube.com/channel/${encodeURIComponent(id)}`,
+    };
+  }
+  if (hostname === "bsky.app") {
+    return {
+      platform: "Bluesky",
+      placeholder: "DID (did:plc:…) oder Handle",
+      build: (id) => `https://bsky.app/profile/${encodeURIComponent(id)}`,
+    };
+  }
+  if (hostname === "steamcommunity.com") {
+    return {
+      platform: "Steam",
+      placeholder: "SteamID64 (17-stellig)",
+      build: (id) => `https://steamcommunity.com/profiles/${encodeURIComponent(id)}`,
+    };
+  }
+  if (hostname === "github.com") {
+    return {
+      platform: "GitHub",
+      placeholder: "Numerische User-ID",
+      lookup: async (id) => {
+        const res = await fetch(`https://api.github.com/user/${encodeURIComponent(id)}`);
+        if (!res.ok) throw new Error(`GitHub-API antwortete mit Status ${res.status}.`);
+        const json = await res.json();
+        if (!json.login) throw new Error("Kein GitHub-Nutzer mit dieser ID gefunden.");
+        return `https://github.com/${json.login}`;
+      },
+    };
+  }
+  return null;
+}
+
+function renderIdOpenerBlock(config) {
+  const block = document.createElement("div");
+  block.className = "image-block";
+
+  const label = document.createElement("div");
+  label.className = "image-label";
+  label.textContent = `${config.platform}-Profil per ID öffnen`;
+  block.appendChild(label);
+
+  if (config.warning) {
+    const warning = document.createElement("div");
+    warning.className = "hint";
+    warning.style.marginBottom = "4px";
+    warning.textContent = config.warning;
+    block.appendChild(warning);
+  }
+
+  const row = document.createElement("div");
+  row.className = "search-row";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "search-input";
+  input.placeholder = config.placeholder || "ID eingeben…";
+  row.appendChild(input);
+
+  const btn = document.createElement("button");
+  btn.className = "download-btn";
+  btn.textContent = "Öffnen";
+  const openById = async () => {
+    const id = input.value.trim();
+    if (!id) return;
+    btn.disabled = true;
+    btn.textContent = "Suche…";
+    try {
+      const url = config.build ? config.build(id) : await config.lookup(id);
+      chrome.tabs.create({ url });
+      btn.textContent = "Öffnen";
+    } catch (e) {
+      btn.textContent = `Fehler: ${e.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  };
+  btn.addEventListener("click", openById);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") openById();
+  });
+  row.appendChild(btn);
+
+  block.appendChild(row);
+  contentEl.appendChild(block);
+}
+
+// Mastodon: ID→Username-Auflösung ist instanzspezifisch (jede Domain hat ihre
+// eigene API), läuft daher wie die anderen Mastodon-Funktionen über
+// activeTab + scripting.executeScript statt über einen festen Endpunkt.
+async function mastodonLookupByIdProbe(id) {
+  try {
+    const res = await fetch(`https://${location.hostname}/api/v1/accounts/${encodeURIComponent(id)}`);
+    if (!res.ok) {
+      return { success: false, error: `Mastodon-API antwortete mit Status ${res.status}.` };
+    }
+    const acc = await res.json();
+    if (!acc.username) {
+      return { success: false, error: "Kein Account mit dieser ID gefunden." };
+    }
+    return { success: true, url: `https://${location.hostname}/@${acc.username}` };
+  } catch (e) {
+    return { success: false, error: "Anfrage fehlgeschlagen." };
+  }
+}
+
+function renderMastodonIdOpenerBlock(tab) {
+  renderIdOpenerBlock({
+    platform: "Mastodon",
+    placeholder: "Numerische Account-ID",
+    lookup: async (id) => {
+      const [injection] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: mastodonLookupByIdProbe,
+        args: [id],
+      });
+      const result = injection && injection.result;
+      if (!result || !result.success) {
+        throw new Error((result && result.error) || "Unbekannter Fehler.");
+      }
+      return result.url;
+    },
+  });
 }
 
 async function getActiveTab() {
@@ -687,20 +838,26 @@ async function run() {
     return;
   }
 
+  const idConfig = getIdOpenerConfig(hostname);
+
   try {
     const response = await chrome.tabs.sendMessage(tab.id, { type: "EXTRACT_PROFILE" });
     if (!response) {
       renderError("Keine Antwort vom Content-Script. Seite neu laden und erneut versuchen.");
+      if (idConfig) renderIdOpenerBlock(idConfig);
       return;
     }
     if (!response.success) {
       platformLabelEl.textContent = response.platform || "";
       renderError(response.error || "Unbekannter Fehler bei der Extraktion.");
+      if (idConfig) renderIdOpenerBlock(idConfig);
       return;
     }
     renderData(response.platform, response.data);
+    if (idConfig) renderIdOpenerBlock(idConfig);
   } catch (e) {
     renderError("Content-Script nicht erreichbar. Seite neu laden und erneut versuchen.");
+    if (idConfig) renderIdOpenerBlock(idConfig);
   }
 }
 

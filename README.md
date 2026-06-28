@@ -142,6 +142,34 @@ wie die Profil-Extraktion), aber deutlich bruchanfälliger; bei Instagram,
 Threads, TikTok und Pinterest gibt es keine vergleichbar stabile offene API
 für vollständige Beitragslisten samt Kommentaren.
 
+## Profil per ID öffnen
+
+Ist man auf einer unterstützten Plattform, aber nicht auf einer Profilseite
+(z. B. der Facebook-Startseite), erscheint statt der Profildaten ein
+Eingabefeld „Profil per ID öffnen". Das Feld erscheint zusätzlich auch dann,
+wenn man bereits auf einem Profil ist – um direkt ein weiteres Profil über
+dessen ID aufzurufen, ohne erst zur Plattform-Startseite zurückzugehen.
+
+Hintergrund: Bei manchen Plattformen reicht die ID allein, um direkt zum
+Profil zu navigieren (z. B. `facebook.com/profile.php?id=...`), bei anderen
+nicht (z. B. Instagram: `instagram.com/<username>`, nicht `<id>`). Aufgenommen
+sind hier nur Plattformen, bei denen das entweder direkt über die URL geht
+oder über eine stabile, öffentliche API zuverlässig auflösbar ist:
+
+| Plattform | Funktionsweise |
+|-----------|-----------------|
+| Facebook  | ID direkt in der URL (`profile.php?id=`) |
+| Instagram | ID direkt in der URL (`/uid/<id>`) |
+| YouTube   | Channel-ID direkt in der URL (`/channel/<ID>`) |
+| Bluesky   | DID direkt in der URL (`/profile/<did>`) |
+| Steam     | SteamID64 direkt in der URL (`/profiles/<id>`) |
+| GitHub    | Lookup über die öffentliche API (`api.github.com/user/<id>` → Username) |
+| Mastodon  | Lookup über die öffentliche API der jeweiligen Instanz (`/api/v1/accounts/<id>` → Username) |
+
+Bei X/Twitter, TikTok, Reddit, Twitch, Pinterest und Threads ist das (noch)
+nicht umgesetzt, da es dort keine zuverlässige, öffentliche ID→Profil-
+Auflösung gibt, auf die man sich verlassen könnte.
+
 ## Funktionsweise
 
 - Pro Plattform gibt es ein eigenes Content-Script (`content-scripts/*.js`),
