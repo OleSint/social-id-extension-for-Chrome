@@ -160,15 +160,16 @@ oder über eine stabile, öffentliche API zuverlässig auflösbar ist:
 |-----------|-----------------|
 | Facebook  | ID direkt in der URL (`profile.php?id=`) |
 | Instagram | ID direkt in der URL (`/uid/<id>`) |
+| TikTok    | ID direkt in der URL (`/@<id>`) |
 | YouTube   | Channel-ID direkt in der URL (`/channel/<ID>`) |
 | Bluesky   | DID direkt in der URL (`/profile/<did>`) |
 | Steam     | SteamID64 direkt in der URL (`/profiles/<id>`) |
 | GitHub    | Lookup über die öffentliche API (`api.github.com/user/<id>` → Username) |
 | Mastodon  | Lookup über die öffentliche API der jeweiligen Instanz (`/api/v1/accounts/<id>` → Username) |
 
-Bei X/Twitter, TikTok, Reddit, Twitch, Pinterest und Threads ist das (noch)
-nicht umgesetzt, da es dort keine zuverlässige, öffentliche ID→Profil-
-Auflösung gibt, auf die man sich verlassen könnte.
+Bei X/Twitter, Reddit, Twitch, Pinterest und Threads ist das (noch) nicht
+umgesetzt, da es dort keine zuverlässige, öffentliche ID→Profil-Auflösung
+gibt, auf die man sich verlassen könnte.
 
 ## Funktionsweise
 
@@ -205,7 +206,31 @@ Auflösung gibt, auf die man sich verlassen könnte.
 - Manche Endpunkte benötigen einen eingeloggten Zustand auf der jeweiligen
   Plattform (z. B. Instagram, X, Threads, Twitch, Pinterest).
 
+## Postings
+
+Ist man auf einer einzelnen Beitragsseite (statt einer Profilseite), zeigt
+das Popup statt der Profildaten Infos zu genau diesem Beitrag – das
+wichtigste Feld ist dabei immer **„Gepostet am"**. Bewusst schlank gehalten:
+wenige Kernfelder statt vollständiger Kommentar-Listen oder einer eigenen
+HTML-Sicherung pro Beitrag (das bleibt der Profil-Sicherung vorbehalten).
+Wo ein Bild/Video zum Beitrag gehört, erscheint wie beim Profilbild ein
+Download-Button.
+
+| Plattform | Erkannt an | Felder |
+|-----------|-----------|--------|
+| Facebook  | `/posts/`, `/permalink.php`, `/photo`, `/videos/`, `/reel/` | nur Datum (best effort, aus Unix-Timestamp im Seitenquelltext) |
+| Reddit    | `/comments/` in der URL | Datum, Titel, Autor, Subreddit, Punkte, Kommentar-Zahl, Text, Medium |
+| Bluesky   | `/profile/<handle>/post/<rkey>` | Datum, Text, Likes/Reposts/Antworten-Zahl, Medium |
+| Mastodon  | `/@<user>/<numerische ID>` | Datum, Text, Likes/Boosts/Antworten-Zahl, Medium |
+| TikTok    | `/@<user>/video/<id>` | Datum, Beschreibung, Likes/Kommentare/Aufrufe/Shares, Medium (Video) |
+| Instagram | `/p/<shortcode>/`, `/reel/<shortcode>/` | Datum, Beschreibung, Likes, Kommentar-Zahl, Medium – am fragilsten, da über mehrere eingebettete JSON-Script-Tags gesucht werden muss (kein vorhersagbarer Variablenname wie bei TikTok) |
+
+Bei X/Twitter, Threads und Pinterest ist das (noch) nicht umgesetzt (gleiche
+Gründe wie bei der Profil-Sicherung: technisch möglich, aber bruchanfälliger
+über interne, undokumentierte APIs).
+
 ## Geplant
 
-- Sicherungsfunktion (Export der angezeigten Profildaten), kommt in einem
-  späteren Schritt.
+- Änderungs-Tracking: eine gespeicherte Profil-Sicherung später erneut
+  abrufen und Unterschiede anzeigen (neue Beiträge, Follower-Veränderung, …).
+- Postings-Funktion auf X/Twitter, Threads und Pinterest ausweiten.

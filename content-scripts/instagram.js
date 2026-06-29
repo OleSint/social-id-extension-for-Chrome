@@ -16,7 +16,78 @@ function getInstagramUsernameFromUrl() {
   return username;
 }
 
+function isInstagramPostPage() {
+  return /^\/(p|reel)\/[^/]+/.test(window.location.pathname);
+}
+
+// Instagram bettet Beitragsdaten in mehreren <script type="application/json">-
+// Tags ein (kein einzelner vorhersagbarer Variablenname wie bei TikTok).
+// Daher: alle solchen Tags parsen und das erste Objekt nehmen, das ein
+// "taken_at"-Feld enthält (Zeitstempel-Feld, das nur bei Beitragsobjekten
+// vorkommt) – best effort, da Instagram dieses Format ohne Vorwarnung
+// ändern kann.
+function findInstagramPostNode() {
+  const scripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
+  for (const script of scripts) {
+    let parsed;
+    try {
+      parsed = JSON.parse(script.textContent);
+    } catch (e) {
+      continue;
+    }
+    const owner = findNodeContainingKey(parsed, "taken_at");
+    if (owner) return owner;
+  }
+  return null;
+}
+
+function findNodeContainingKey(obj, key, maxDepth = 16) {
+  const seen = new Set();
+  function walk(node, depth) {
+    if (!node || typeof node !== "object" || depth > maxDepth || seen.has(node)) return undefined;
+    seen.add(node);
+    if (Object.prototype.hasOwnProperty.call(node, key)) return node;
+    for (const k of Object.keys(node)) {
+      const result = walk(node[k], depth + 1);
+      if (result !== undefined) return result;
+    }
+    return undefined;
+  }
+  return walk(obj, 0);
+}
+
+function extractInstagramPost() {
+  const node = findInstagramPostNode();
+  if (!node) {
+    throw new Error("Beitragsdaten nicht gefunden (Format hat sich evtl. geändert oder Seite muss frisch geladen werden).");
+  }
+
+  const likeCount = node.like_count ?? (node.edge_media_preview_like && node.edge_media_preview_like.count);
+  const commentCount = node.comment_count ?? (node.edge_media_to_comment && node.edge_media_to_comment.count);
+  const caption =
+    (node.caption && node.caption.text) ||
+    (node.edge_media_to_caption && node.edge_media_to_caption.edges[0] && node.edge_media_to_caption.edges[0].node.text);
+  const mediaUrl =
+    node.video_url ||
+    node.display_url ||
+    (node.image_versions2 && node.image_versions2.candidates && node.image_versions2.candidates[0] && node.image_versions2.candidates[0].url);
+
+  const result = {
+    "Gepostet am": node.taken_at ? new Date(node.taken_at * 1000).toLocaleString("de-DE") : null,
+    "Beschreibung": caption || null,
+    "Likes": likeCount ?? null,
+    "Kommentare": commentCount ?? null,
+    "Medium": mediaUrl || null,
+  };
+  Object.keys(result).forEach((k) => (result[k] === null || result[k] === undefined) && delete result[k]);
+  return result;
+}
+
 async function extractInstagram() {
+  if (isInstagramPostPage()) {
+    return extractInstagramPost();
+  }
+
   const username = getInstagramUsernameFromUrl();
   if (!username) {
     throw new Error("Kein Instagram-Profil auf dieser Seite erkannt.");

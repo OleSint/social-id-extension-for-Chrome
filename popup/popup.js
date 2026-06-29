@@ -33,10 +33,10 @@ function renderError(text) {
   contentEl.innerHTML = `<p class="error">${text}</p>`;
 }
 
-const IMAGE_KEYS = ["Profilbild", "Banner"];
+const IMAGE_KEYS = ["Profilbild", "Banner", "Medium"];
 
 function guessImageExtension(url) {
-  const match = url.match(/\.(jpe?g|png|webp|gif|bmp)(?:[?#]|$)/i);
+  const match = url.match(/\.(jpe?g|png|webp|gif|bmp|mp4|webm|mov)(?:[?#]|$)/i);
   return match ? match[1].toLowerCase().replace("jpeg", "jpg") : "jpg";
 }
 
@@ -105,8 +105,8 @@ function renderData(platform, data) {
     contentEl.appendChild(block);
   });
 
-  if (platform === "Facebook" && data["Anzeigename"]) {
-    renderFacebookSearchBlock(data["Anzeigename"]);
+  if (platform === "Facebook" && (data["Benutzername"] || data["Anzeigename"])) {
+    renderFacebookSearchBlock(data["Benutzername"] || data["Anzeigename"]);
   }
 
   const postsLink = getPostsLinkForPlatform(platform, data);
@@ -604,6 +604,32 @@ async function mastodonProbe() {
     div.innerHTML = html || "";
     return div.textContent.trim();
   }
+
+  const postMatch = location.pathname.match(/^\/@[^/]+\/(\d+)\/?$/);
+  if (postMatch) {
+    try {
+      const res = await fetch(`https://${location.hostname}/api/v1/statuses/${postMatch[1]}`);
+      if (!res.ok) {
+        return { success: false, error: `Mastodon-API antwortete mit Status ${res.status}.` };
+      }
+      const status = await res.json();
+      const mediaUrl =
+        status.media_attachments && status.media_attachments[0] ? status.media_attachments[0].url : null;
+      const data = {
+        "Gepostet am": status.created_at ? new Date(status.created_at).toLocaleString("de-DE") : null,
+        "Text": stripHtml(status.content) || null,
+        "Likes": status.favourites_count ?? null,
+        "Boosts": status.reblogs_count ?? null,
+        "Antworten": status.replies_count ?? null,
+        "Medium": mediaUrl,
+      };
+      Object.keys(data).forEach((k) => (data[k] === null || data[k] === undefined) && delete data[k]);
+      return { success: true, data };
+    } catch (e) {
+      return { success: false, error: "Anfrage fehlgeschlagen (Netzwerk)." };
+    }
+  }
+
   const match = location.pathname.match(/^\/@([^/]+)\/?$/);
   if (!match) {
     return { success: false, error: "Keine Mastodon-Profil-URL erkannt (Format: instanz.tld/@name)." };
@@ -679,6 +705,13 @@ function getIdOpenerConfig(hostname) {
       platform: "Instagram",
       placeholder: "Numerische User-ID",
       build: (id) => `https://www.instagram.com/uid/${encodeURIComponent(id)}`,
+    };
+  }
+  if (hostname === "www.tiktok.com") {
+    return {
+      platform: "TikTok",
+      placeholder: "Numerische User-ID",
+      build: (id) => `https://www.tiktok.com/@${encodeURIComponent(id)}`,
     };
   }
   if (hostname === "www.youtube.com") {

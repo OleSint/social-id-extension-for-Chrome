@@ -8,7 +8,58 @@ function getBlueskyActorFromUrl() {
   return match ? match[1] : null;
 }
 
+function getBlueskyPostFromUrl() {
+  const match = window.location.pathname.match(/^\/profile\/([^/]+)\/post\/([^/]+)/);
+  return match ? { actor: match[1], rkey: match[2] } : null;
+}
+
+async function extractBlueskyPost(postInfo) {
+  let did = postInfo.actor;
+  if (!did.startsWith("did:")) {
+    const profileRes = await fetch(
+      `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(postInfo.actor)}`
+    );
+    if (profileRes.ok) {
+      const profile = await profileRes.json();
+      did = profile.did;
+    }
+  }
+
+  const uri = `at://${did}/app.bsky.feed.post/${postInfo.rkey}`;
+  const threadRes = await fetch(
+    `https://public.api.bsky.app/xrpc/app.bsky.feed.getPostThread?uri=${encodeURIComponent(uri)}&depth=0`
+  );
+  if (!threadRes.ok) {
+    throw new Error(`Bluesky-API antwortete mit Status ${threadRes.status}.`);
+  }
+  const threadJson = await threadRes.json();
+  const post = threadJson.thread && threadJson.thread.post;
+  if (!post) {
+    throw new Error("Beitragsdaten nicht gefunden.");
+  }
+  const record = post.record || {};
+
+  const mediaUrl =
+    post.embed && Array.isArray(post.embed.images) && post.embed.images.length ? post.embed.images[0].fullsize : null;
+
+  const result = {
+    "Gepostet am": record.createdAt ? new Date(record.createdAt).toLocaleString("de-DE") : null,
+    "Text": record.text || null,
+    "Likes": post.likeCount ?? null,
+    "Reposts": post.repostCount ?? null,
+    "Antworten": post.replyCount ?? null,
+    "Medium": mediaUrl,
+  };
+  Object.keys(result).forEach((k) => (result[k] === null || result[k] === undefined) && delete result[k]);
+  return result;
+}
+
 async function extractBluesky() {
+  const postInfo = getBlueskyPostFromUrl();
+  if (postInfo) {
+    return extractBlueskyPost(postInfo);
+  }
+
   const actor = getBlueskyActorFromUrl();
   if (!actor) {
     throw new Error("Kein Bluesky-Profil auf dieser Seite erkannt (URL-Format: bsky.app/profile/handle).");

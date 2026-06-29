@@ -26,6 +26,13 @@ function getFacebookIdFromSource() {
   return null;
 }
 
+function getFacebookUsernameFromUrl() {
+  const path = window.location.pathname;
+  if (path === "/profile.php" || path === "/profile.php/") return null;
+  const match = path.match(/^\/([A-Za-z0-9.]+)\/?$/);
+  return match ? match[1] : null;
+}
+
 function isFacebookProfilePage() {
   const path = window.location.pathname;
   if (path === "/profile.php" || path === "/profile.php/") return true;
@@ -33,9 +40,34 @@ function isFacebookProfilePage() {
   return /^\/[A-Za-z0-9.]+\/?$/.test(path);
 }
 
+function isFacebookPostPage() {
+  const path = window.location.pathname;
+  return /\/posts\//.test(path) || /\/permalink\.php/.test(path) || /\/photo(\.php|\/)/.test(path) || /\/videos\//.test(path) || /\/reel\//.test(path);
+}
+
+// Facebook bettet den Zeitpunkt eines Beitrags als Unix-Timestamp im
+// Seitenquelltext ein (gleiches Prinzip wie die ID-Extraktion oben).
+function getFacebookPostDate() {
+  const html = document.documentElement.innerHTML;
+  const patterns = [/"publish_time":(\d{9,11})/, /"creation_time":(\d{9,11})/, /"timestamp":(\d{9,11})/];
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) return new Date(parseInt(match[1], 10) * 1000).toLocaleString("de-DE");
+  }
+  return null;
+}
+
 function extractFacebook() {
+  if (isFacebookPostPage()) {
+    const postDate = getFacebookPostDate();
+    if (!postDate) {
+      throw new Error("Datum des Beitrags konnte nicht gefunden werden.");
+    }
+    return { "Gepostet am": postDate };
+  }
+
   if (!isFacebookProfilePage()) {
-    throw new Error("Keine Facebook-Profilseite erkannt.");
+    throw new Error("Keine Facebook-Profilseite oder kein Beitrag erkannt.");
   }
 
   const id = getFacebookIdFromUrl() || getFacebookIdFromSource();
@@ -52,6 +84,7 @@ function extractFacebook() {
 
   const result = {
     "Profil-ID": id,
+    "Benutzername": getFacebookUsernameFromUrl(),
     "Anzeigename": titleMatch || null,
     "Profilbild": ogImage ? ogImage.getAttribute("content") : null,
   };

@@ -10,24 +10,60 @@ function getTikTokUsernameFromUrl() {
   return username;
 }
 
+function getTikTokVideoIdFromUrl() {
+  const match = window.location.pathname.match(/^\/@[^/]+\/video\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+function getTikTokHydrationData() {
+  const scriptTag = document.getElementById("__UNIVERSAL_DATA_FOR_REHYDRATION__");
+  if (!scriptTag) {
+    throw new Error("TikTok-Daten konnten nicht gefunden werden. Seite ggf. neu laden.");
+  }
+  try {
+    return JSON.parse(scriptTag.textContent);
+  } catch (e) {
+    throw new Error("TikTok-Daten konnten nicht gelesen werden (Format hat sich evtl. geändert).");
+  }
+}
+
+function extractTikTokPost() {
+  const parsed = getTikTokHydrationData();
+  const detail = findKeyDeep(parsed, "webapp.video-detail");
+  const itemInfo = detail && detail.itemInfo ? detail.itemInfo : detail;
+  const item = itemInfo && itemInfo.itemStruct ? itemInfo.itemStruct : findKeyDeep(parsed, "itemStruct");
+  if (!item) {
+    throw new Error("Beitragsdaten nicht gefunden.");
+  }
+
+  const stats = item.stats || item.statsV2 || {};
+  const mediaUrl = item.video ? item.video.playAddr || item.video.downloadAddr : null;
+
+  const result = {
+    "Gepostet am": item.createTime ? new Date(item.createTime * 1000).toLocaleString("de-DE") : null,
+    "Beschreibung": item.desc || null,
+    "Likes": stats.diggCount ?? null,
+    "Kommentare": stats.commentCount ?? null,
+    "Aufrufe": stats.playCount ?? null,
+    "Geteilt": stats.shareCount ?? null,
+    "Medium": mediaUrl,
+  };
+  Object.keys(result).forEach((k) => (result[k] === null || result[k] === undefined) && delete result[k]);
+  return result;
+}
+
 function extractTikTok() {
+  const videoId = getTikTokVideoIdFromUrl();
+  if (videoId) {
+    return extractTikTokPost();
+  }
+
   const username = getTikTokUsernameFromUrl();
   if (!username) {
     throw new Error("Kein TikTok-Profil auf dieser Seite erkannt (URL-Format: tiktok.com/@name).");
   }
 
-  const scriptTag = document.getElementById("__UNIVERSAL_DATA_FOR_REHYDRATION__");
-  if (!scriptTag) {
-    throw new Error("TikTok-Daten konnten nicht gefunden werden. Seite ggf. neu laden.");
-  }
-
-  let parsed;
-  try {
-    parsed = JSON.parse(scriptTag.textContent);
-  } catch (e) {
-    throw new Error("TikTok-Daten konnten nicht gelesen werden (Format hat sich evtl. geändert).");
-  }
-
+  const parsed = getTikTokHydrationData();
   const userDetail = findKeyDeep(parsed, "webapp.user-detail") || findKeyDeep(parsed, "userInfo");
   const userInfo = userDetail && userDetail.userInfo ? userDetail.userInfo : userDetail;
   const user = userInfo && userInfo.user ? userInfo.user : findKeyDeep(parsed, "user");

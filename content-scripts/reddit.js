@@ -6,7 +6,47 @@ function getRedditUsernameFromUrl() {
   return match ? match[1] : null;
 }
 
+function isRedditPostPage() {
+  return /\/comments\//.test(window.location.pathname);
+}
+
+// Jede Reddit-Seite liefert ihre eigene JSON-Repräsentation, wenn man ".json"
+// an den Pfad anhängt – auch Kommentar-/Beitragsseiten. Kein separater
+// API-Aufbau nötig wie bei den anderen Plattformen.
+async function extractRedditPost() {
+  const response = await fetch(`https://www.reddit.com${window.location.pathname}.json`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Reddit-API antwortete mit Status ${response.status}.`);
+  }
+  const json = await response.json();
+  const postData = json && json[0] && json[0].data && json[0].data.children && json[0].data.children[0] && json[0].data.children[0].data;
+  if (!postData) {
+    throw new Error("Beitragsdaten nicht gefunden.");
+  }
+
+  const mediaUrl = /\.(jpe?g|png|gif|gifv|mp4|webm)(\?|$)/i.test(postData.url || "") ? postData.url : null;
+
+  const result = {
+    "Gepostet am": postData.created_utc ? new Date(postData.created_utc * 1000).toLocaleString("de-DE") : null,
+    "Titel": postData.title || null,
+    "Autor": postData.author || null,
+    "Subreddit": postData.subreddit ? `r/${postData.subreddit}` : null,
+    "Punkte": postData.score ?? null,
+    "Kommentare": postData.num_comments ?? null,
+    "Text": postData.selftext || null,
+    "Medium": mediaUrl,
+  };
+  Object.keys(result).forEach((k) => (result[k] === null || result[k] === undefined) && delete result[k]);
+  return result;
+}
+
 async function extractReddit() {
+  if (isRedditPostPage()) {
+    return extractRedditPost();
+  }
+
   const username = getRedditUsernameFromUrl();
   if (!username) {
     throw new Error("Kein Reddit-Nutzerprofil auf dieser Seite erkannt (URL-Format: reddit.com/user/name).");
