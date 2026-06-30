@@ -73,3 +73,41 @@ function formatUnixSeconds(seconds) {
   if (!seconds && seconds !== 0) return null;
   return new Date(seconds * 1000).toISOString().slice(0, 10);
 }
+
+// Medien-Download für Postings: chrome.downloads.download() greift ohne die
+// Session-Cookies der Seite auf die URL zu. Bei geschützten/signierten
+// CDN-Links (z. B. TikTok playAddr, manche Instagram-Video-URLs) liefert der
+// Server dann oft eine HTML-Fehler-/Login-Seite statt der echten Datei, die
+// trotzdem unter der erwarteten Dateiendung gespeichert wird. Ein Fetch
+// innerhalb der Seite (mit Cookies) + Content-Type-Prüfung verhindert das.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || msg.type !== "FETCH_MEDIA_AS_DATA_URL") return;
+  (async () => {
+    try {
+      const response = await fetch(msg.url, { credentials: "include" });
+      if (!response.ok) {
+        sendResponse({ success: false, error: `Status ${response.status}` });
+        return;
+      }
+      const contentType = (response.headers.get("content-type") || "").split(";")[0].trim();
+      if (!/^(image|video)\//.test(contentType)) {
+        sendResponse({
+          success: false,
+          error: `Unerwarteter Inhaltstyp (${contentType || "unbekannt"}) – vermutlich kein direkter Medien-Link.`,
+        });
+        return;
+      }
+      const blob = await response.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("Lesen fehlgeschlagen."));
+        reader.readAsDataURL(blob);
+      });
+      sendResponse({ success: true, dataUrl, contentType });
+    } catch (err) {
+      sendResponse({ success: false, error: "Anfrage fehlgeschlagen (Netzwerk)." });
+    }
+  })();
+  return true;
+});

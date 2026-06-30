@@ -56,6 +56,28 @@ function findNodeContainingKey(obj, key, maxDepth = 16) {
   return walk(obj, 0);
 }
 
+// "video_url" fehlt auf manchen Knoten-Varianten (führte dazu, dass bei
+// Video-Beiträgen nur das Standbild aus display_url heruntergeladen wurde).
+// video_versions ist die zuverlässigere Quelle für das echte Video. Bei
+// Karussell-Beiträgen (mehrere Bilder/Videos) wird das erste Element genutzt.
+function getInstagramMediaUrl(node) {
+  if (node.video_versions && node.video_versions.length) {
+    return node.video_versions[0].url;
+  }
+  if (node.video_url) return node.video_url;
+  if (node.carousel_media && node.carousel_media.length) {
+    const first = node.carousel_media[0];
+    if (first.video_versions && first.video_versions.length) return first.video_versions[0].url;
+    if (first.image_versions2 && first.image_versions2.candidates && first.image_versions2.candidates.length) {
+      return first.image_versions2.candidates[0].url;
+    }
+  }
+  if (node.image_versions2 && node.image_versions2.candidates && node.image_versions2.candidates.length) {
+    return node.image_versions2.candidates[0].url;
+  }
+  return node.display_url || null;
+}
+
 function extractInstagramPost() {
   const node = findInstagramPostNode();
   if (!node) {
@@ -67,10 +89,7 @@ function extractInstagramPost() {
   const caption =
     (node.caption && node.caption.text) ||
     (node.edge_media_to_caption && node.edge_media_to_caption.edges[0] && node.edge_media_to_caption.edges[0].node.text);
-  const mediaUrl =
-    node.video_url ||
-    node.display_url ||
-    (node.image_versions2 && node.image_versions2.candidates && node.image_versions2.candidates[0] && node.image_versions2.candidates[0].url);
+  const mediaUrl = getInstagramMediaUrl(node);
 
   const result = {
     "Gepostet am": node.taken_at ? new Date(node.taken_at * 1000).toLocaleString("de-DE") : null,

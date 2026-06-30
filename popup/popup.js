@@ -40,6 +40,63 @@ function guessImageExtension(url) {
   return match ? match[1].toLowerCase().replace("jpeg", "jpg") : "jpg";
 }
 
+const CONTENT_TYPE_EXTENSIONS = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
+};
+
+function extensionFromContentType(contentType) {
+  if (CONTENT_TYPE_EXTENSIONS[contentType]) return CONTENT_TYPE_EXTENSIONS[contentType];
+  const sub = (contentType || "").split("/")[1];
+  return sub || "bin";
+}
+
+// Mastodon hat keinen festen content_scripts-Eintrag (siehe mastodonProbe
+// weiter unten), daher läuft der Medien-Abruf für Mastodon-Beiträge über
+// executeScript statt über chrome.tabs.sendMessage wie bei den anderen
+// Plattformen (deren gemeinsamer FETCH_MEDIA_AS_DATA_URL-Handler in
+// common.js registriert ist).
+async function mastodonFetchMediaProbe(url) {
+  try {
+    const res = await fetch(url, { credentials: "include" });
+    if (!res.ok) return { success: false, error: `Status ${res.status}` };
+    const contentType = (res.headers.get("content-type") || "").split(";")[0].trim();
+    if (!/^(image|video)\//.test(contentType)) {
+      return {
+        success: false,
+        error: `Unerwarteter Inhaltstyp (${contentType || "unbekannt"}) – vermutlich kein direkter Medien-Link.`,
+      };
+    }
+    const blob = await res.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Lesen fehlgeschlagen."));
+      reader.readAsDataURL(blob);
+    });
+    return { success: true, dataUrl, contentType };
+  } catch (e) {
+    return { success: false, error: "Anfrage fehlgeschlagen (Netzwerk)." };
+  }
+}
+
+async function fetchMediaDataUrl(tab, url, isMastodon) {
+  if (isMastodon) {
+    const [injection] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: mastodonFetchMediaProbe,
+      args: [url],
+    });
+    return injection && injection.result;
+  }
+  return chrome.tabs.sendMessage(tab.id, { type: "FETCH_MEDIA_AS_DATA_URL", url });
+}
+
 function renderData(platform, data) {
   platformLabelEl.textContent = platform;
   const textEntries = Object.entries(data).filter(([key]) => !IMAGE_KEYS.includes(key));
@@ -90,16 +147,48 @@ function renderData(platform, data) {
     const downloadBtn = document.createElement("button");
     downloadBtn.className = "download-btn";
     downloadBtn.textContent = `${key} herunterladen`;
-    downloadBtn.addEventListener("click", () => {
-      const ext = guessImageExtension(url);
-      const safePlatform = platform.replace(/[^a-zA-Z0-9]+/g, "_");
-      const safeKey = key.replace(/[^a-zA-Z0-9]+/g, "_");
-      chrome.downloads.download({
-        url,
-        filename: `${safeKey}_${safePlatform}.${ext}`,
-        saveAs: true,
+
+    if (key === "Medium") {
+      // Postings-Medien (im Gegensatz zu Profilbildern) liegen häufig hinter
+      // signierten/geschützten CDN-URLs, die ohne die Session-Cookies der
+      // Seite eine HTML-Fehler-/Login-Seite statt der echten Datei liefern.
+      // Daher: Fetch innerhalb der Seite + Content-Type-Prüfung statt
+      // direktem chrome.downloads.download() auf die rohe URL.
+      downloadBtn.addEventListener("click", async () => {
+        downloadBtn.disabled = true;
+        downloadBtn.textContent = "Lade Medium…";
+        try {
+          const tab = await getActiveTab();
+          const result = await fetchMediaDataUrl(tab, url, platform === "Mastodon");
+          if (!result || !result.success) {
+            throw new Error((result && result.error) || "Unbekannter Fehler.");
+          }
+          const ext = extensionFromContentType(result.contentType);
+          const safePlatform = platform.replace(/[^a-zA-Z0-9]+/g, "_");
+          await chrome.downloads.download({
+            url: result.dataUrl,
+            filename: `medium_${safePlatform}.${ext}`,
+            saveAs: true,
+          });
+          downloadBtn.textContent = `${key} herunterladen`;
+        } catch (e) {
+          downloadBtn.textContent = `Fehler: ${e.message}`;
+        } finally {
+          downloadBtn.disabled = false;
+        }
       });
-    });
+    } else {
+      downloadBtn.addEventListener("click", () => {
+        const ext = guessImageExtension(url);
+        const safePlatform = platform.replace(/[^a-zA-Z0-9]+/g, "_");
+        const safeKey = key.replace(/[^a-zA-Z0-9]+/g, "_");
+        chrome.downloads.download({
+          url,
+          filename: `${safeKey}_${safePlatform}.${ext}`,
+          saveAs: true,
+        });
+      });
+    }
     block.appendChild(downloadBtn);
 
     contentEl.appendChild(block);

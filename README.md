@@ -216,6 +216,17 @@ HTML-Sicherung pro Beitrag (das bleibt der Profil-Sicherung vorbehalten).
 Wo ein Bild/Video zum Beitrag gehört, erscheint wie beim Profilbild ein
 Download-Button.
 
+**Medien-Download-Technik:** Anders als beim Profilbild lädt der Button beim
+„Medium"-Feld die Datei nicht direkt über die rohe CDN-URL herunter, sondern
+ruft sie zuerst innerhalb der Seite per `fetch()` mit Session-Cookies ab und
+prüft den Content-Type. Grund: Viele Postings-Medien liegen hinter
+signierten/geschützten URLs (z. B. TikToks `playAddr`, manche
+Instagram-Video-URLs), die ohne Cookies/Referrer oft eine
+HTML-Fehler-/Login-Seite statt der echten Datei liefern – ein direkter
+Download würde diese Fehlerseite unbemerkt unter der erwarteten Dateiendung
+speichern. Schlägt der Abruf fehl oder liefert er keinen Bild-/Video-Inhalt,
+zeigt der Button eine klare Fehlermeldung statt einer falschen Datei.
+
 | Plattform | Erkannt an | Felder |
 |-----------|-----------|--------|
 | Facebook  | `/posts/`, `/permalink.php`, `/photo`, `/videos/`, `/reel/` | nur Datum (best effort, aus Unix-Timestamp im Seitenquelltext) |
