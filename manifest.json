@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Social ID Viewer",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Zeigt Profil-ID und weitere verfügbare Infos zum aktuell geöffneten Social-Media-Profil",
   "permissions": ["activeTab", "scripting", "storage", "downloads"],
   "host_permissions": [
@@ -72,6 +72,16 @@
     {
       "matches": ["https://steamcommunity.com/*"],
       "js": ["content-scripts/common.js", "content-scripts/steam.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.snapchat.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/snapchat.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.linkedin.com/*"],
+      "js": ["content-scripts/common.js", "content-scripts/linkedin.js"],
       "run_at": "document_idle"
     }
   ]

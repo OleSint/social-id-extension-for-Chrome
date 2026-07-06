@@ -15,6 +15,8 @@ const SUPPORTED_HOSTS = [
   "www.threads.net",
   "www.threads.com",
   "steamcommunity.com",
+  "www.snapchat.com",
+  "www.linkedin.com",
 ];
 
 const contentEl = document.getElementById("content");
@@ -196,6 +198,20 @@ function renderData(platform, data) {
 
   if (platform === "Facebook" && (data["Benutzername"] || data["Anzeigename"])) {
     renderFacebookSearchBlock(data["Benutzername"] || data["Anzeigename"]);
+  }
+
+  if (platform === "Facebook" && data["Profil-ID"]) {
+    renderLinkButtonBlock(
+      "Marketplace-Angebote dieses Profils anzeigen",
+      `https://www.facebook.com/marketplace/?seller_profile=${encodeURIComponent(data["Profil-ID"])}`
+    );
+  }
+
+  if (platform === "Instagram" && data["Benutzername"]) {
+    renderLinkButtonBlock(
+      "Auf Threads ansehen",
+      `https://www.threads.net/@${encodeURIComponent(data["Benutzername"])}`
+    );
   }
 
   const postsLink = getPostsLinkForPlatform(platform, data);
