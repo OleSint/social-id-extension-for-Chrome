@@ -22,7 +22,6 @@ geöffneten Social-Media-Profilseite anzeigt.
 | Mastodon    | ✅ | ✅ | Follower, Folgt, Beiträge, Bio, Bot-Flag, privat/locked, Profilbild/Banner – **kein Login nötig**, generische Erkennung auf jeder Instanz/Domain (kein fester Manifest-Eintrag) |
 | Steam       | ✅ (SteamID64, permanent) | ✅ (`memberSince`) | Echtname, Standort, Bio, Online-Status, VAC-Bann, eingeschränktes Konto – **kein Login nötig**, öffentlicher XML-Profil-Feed (`?xml=1`) |
 | Snapchat    | ❌ (keine öffentliche numerische ID über diesen Weg verfügbar) | ❌ | Anzeigename, Bio, Standort, Website, Erstellt-/Zuletzt-geändert-Zeitstempel |
-| LinkedIn    | ✅ (aus `objectUrn`) | ✅ (`created`) | Vor-/Nachname, Premium-/Influencer-Status, externe Links, Kontaktinfo (E-Mail/Telefon/Website) – siehe Hinweis unten zum automatischen Öffnen des Kontaktinfo-Dialogs |
 
 Auf allen Plattformen werden nur die Felder angezeigt, die auf der jeweils
 geöffneten Seite tatsächlich verfügbar sind.
@@ -72,36 +71,25 @@ Genutzte Auflösung pro Plattform:
 | Mastodon    | `avatar`/`header` aus der öffentlichen Accounts-API (bereits höchste verfügbare Auflösung) |
 | Steam       | `avatarFull` aus dem XML-Feed (184×184 – Steams höchste öffentlich verfügbare Auflösung) |
 
-## Facebook: Suche nach Namen
+## Facebook: Im Profil suchen
 
-Bei Facebook erscheint unter den Profildaten zusätzlich ein mit dem
-Anzeigenamen vorausgefülltes Suchfeld. Klick auf „Suchen" (oder Enter) öffnet
-Facebooks globale Suche (`facebook.com/search/posts/?q=<Name>`) in einem
-neuen Tab. Bewusst **nicht** die "Im Profil suchen"-Funktion
-(`facebook.com/profile/<id>/search/`) – Erfahrungswerten zufolge findet die
-globale Namenssuche öffentlich gemachte Kommentare unter fremden Beiträgen
-deutlich zuverlässiger. Das Feld bleibt editierbar, falls zusätzliche
-Suchbegriffe sinnvoll sind. Es findet kein eigenes Scraping von Beiträgen
-statt – es wird lediglich Facebooks eigene Suche aufgerufen.
+Bei Facebook erscheint unter den Profildaten zusätzlich ein Suchfeld
+„In diesem Profil suchen", vorausgefüllt mit dem Benutzernamen (Vanity-URL)
+bzw. ersatzweise dem Anzeigenamen. Eingabe eines Suchbegriffs + „Suchen"
+(oder Enter) öffnet `facebook.com/profile/<Profil-ID>/search/?q=<Begriff>`
+in einem neuen Tab – Facebooks eigene, profilgebundene Suchfunktion. Das
+Feld bleibt editierbar, falls ein anderer Suchbegriff sinnvoller ist.
+Erfahrungswerten zufolge findet diese Suche nicht nur Beiträge/Kommentare
+direkt im Profil, sondern auch öffentliche Kommentare der Person in Gruppen
+oder unter fremden Beiträgen. Es findet kein eigenes Scraping statt – es
+wird lediglich Facebooks eigene Suche mit der bereits extrahierten
+Profil-ID aufgerufen.
 
 Zusätzlich erscheint bei Facebook ein Button „Marketplace-Angebote dieses
 Profils anzeigen" (`facebook.com/marketplace/?seller_profile=<Profil-ID>`),
 und bei Instagram ein Button „Auf Threads ansehen" (`threads.net/@<Name>`) –
 da Threads denselben Benutzernamen wie das verknüpfte Instagram-Konto nutzt,
 reicht dafür eine reine URL-Umleitung ohne API-Aufruf.
-
-## LinkedIn: automatisches Öffnen des Kontaktinfo-Dialogs
-
-LinkedIn zeigt E-Mail/Telefon/Website eines Profils nur in einem separaten
-Dialog ("Kontaktinfo"), der erst aktiv geöffnet werden muss. Der
-LinkedIn-Extraktor ist daher die einzige Stelle in der gesamten Extension,
-die aktiv mit der Seite interagiert statt nur zu lesen: Er klickt den Dialog
-kurz automatisch auf, liest E-Mail/Telefon/externe Links aus und schließt ihn
-danach wieder. Das kann beim Öffnen des Popups kurz sichtbar auf der
-LinkedIn-Seite aufblitzen. Alle anderen Felder (Name, LinkedIn-Profil-ID,
-Premium-/Influencer-Status, Erstellungsdatum, externe Links im
-Profiltext) werden wie bei allen anderen Plattformen rein passiv aus
-eingebetteten Seitendaten gelesen.
 
 ## Alle Beiträge & Antworten anzeigen (Reddit, Bluesky, Mastodon, X)
 
@@ -224,14 +212,10 @@ gibt, auf die man sich verlassen könnte.
 - **Mastodon** funktioniert nur, wenn die jeweilige Instanz die Standard-API
   unter `/api/v1/...` bereitstellt (bei den allermeisten Mastodon-Instanzen
   der Fall, bei stark angepassten Forks evtl. nicht).
-- **LinkedIn** durchsucht wie Pinterest eine tief verschachtelte,
-  undokumentierte Hydration-Struktur per Regex – kann bei Layout-/
-  Struktur-Änderungen brechen. Der Kontaktinfo-Dialog wird nur ausgelesen,
-  wenn LinkedIn ihn für das jeweilige Profil überhaupt anzeigt.
 - **Snapchat** liefert über den öffentlichen Web-Profil-Weg keine numerische
   Profil-ID – nur Benutzername, Bio und Zeitstempel.
 - Manche Endpunkte benötigen einen eingeloggten Zustand auf der jeweiligen
-  Plattform (z. B. Instagram, X, Threads, Twitch, Pinterest, LinkedIn).
+  Plattform (z. B. Instagram, X, Threads, Twitch, Pinterest).
 
 ## Postings
 

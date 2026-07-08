@@ -16,7 +16,6 @@ const SUPPORTED_HOSTS = [
   "www.threads.com",
   "steamcommunity.com",
   "www.snapchat.com",
-  "www.linkedin.com",
 ];
 
 const contentEl = document.getElementById("content");
@@ -154,24 +153,38 @@ function renderData(platform, data) {
       // Postings-Medien (im Gegensatz zu Profilbildern) liegen häufig hinter
       // signierten/geschützten CDN-URLs, die ohne die Session-Cookies der
       // Seite eine HTML-Fehler-/Login-Seite statt der echten Datei liefern.
-      // Daher: Fetch innerhalb der Seite + Content-Type-Prüfung statt
-      // direktem chrome.downloads.download() auf die rohe URL.
+      // Daher zunächst: Fetch innerhalb der Seite + Content-Type-Prüfung.
+      // Liegt das CDN auf einer anderen Domain als die Plattform selbst
+      // (z. B. Instagram), blockt der Browser diesen Fetch per CORS – in dem
+      // Fall Fallback auf den direkten Download wie beim Profilbild, der
+      // nicht über fetch() läuft und daher von CORS nicht betroffen ist.
       downloadBtn.addEventListener("click", async () => {
         downloadBtn.disabled = true;
         downloadBtn.textContent = "Lade Medium…";
+        const safePlatform = platform.replace(/[^a-zA-Z0-9]+/g, "_");
         try {
           const tab = await getActiveTab();
-          const result = await fetchMediaDataUrl(tab, url, platform === "Mastodon");
-          if (!result || !result.success) {
-            throw new Error((result && result.error) || "Unbekannter Fehler.");
+          let result = null;
+          try {
+            result = await fetchMediaDataUrl(tab, url, platform === "Mastodon");
+          } catch (e) {
+            result = null; // z. B. CORS-Fehler bei plattformfremden CDN-Domains – Fallback greift unten
           }
-          const ext = extensionFromContentType(result.contentType);
-          const safePlatform = platform.replace(/[^a-zA-Z0-9]+/g, "_");
-          await chrome.downloads.download({
-            url: result.dataUrl,
-            filename: `medium_${safePlatform}.${ext}`,
-            saveAs: true,
-          });
+          if (result && result.success) {
+            const ext = extensionFromContentType(result.contentType);
+            await chrome.downloads.download({
+              url: result.dataUrl,
+              filename: `medium_${safePlatform}.${ext}`,
+              saveAs: true,
+            });
+          } else {
+            const ext = guessImageExtension(url);
+            await chrome.downloads.download({
+              url,
+              filename: `medium_${safePlatform}.${ext}`,
+              saveAs: true,
+            });
+          }
           downloadBtn.textContent = `${key} herunterladen`;
         } catch (e) {
           downloadBtn.textContent = `Fehler: ${e.message}`;
@@ -196,8 +209,8 @@ function renderData(platform, data) {
     contentEl.appendChild(block);
   });
 
-  if (platform === "Facebook" && (data["Benutzername"] || data["Anzeigename"])) {
-    renderFacebookSearchBlock(data["Benutzername"] || data["Anzeigename"]);
+  if (platform === "Facebook" && data["Profil-ID"]) {
+    renderFacebookSearchBlock(data["Profil-ID"], data["Benutzername"] || data["Anzeigename"]);
   }
 
   if (platform === "Facebook" && data["Profil-ID"]) {
@@ -661,13 +674,13 @@ function renderLinkButtonBlock(label, url) {
 // zuverlässig. Die globale Facebook-Suche nach dem Namen (search/posts/?q=...)
 // liefert das deutlich verlässlicher, daher wird hier immer der Name als
 // Suchbegriff verwendet statt frei wählbarer Begriffe innerhalb des Profils.
-function renderFacebookSearchBlock(displayName) {
+function renderFacebookSearchBlock(profileId, prefillValue) {
   const block = document.createElement("div");
   block.className = "image-block";
 
   const label = document.createElement("div");
   label.className = "image-label";
-  label.textContent = "Nach Namen suchen (findet öffentliche Kommentare zuverlässiger)";
+  label.textContent = "In diesem Profil suchen (findet auch öffentliche Kommentare in Gruppen/fremden Beiträgen)";
   block.appendChild(label);
 
   const row = document.createElement("div");
@@ -676,7 +689,8 @@ function renderFacebookSearchBlock(displayName) {
   const input = document.createElement("input");
   input.type = "text";
   input.className = "search-input";
-  input.value = displayName;
+  input.placeholder = "Suchbegriff eingeben…";
+  if (prefillValue) input.value = prefillValue;
   row.appendChild(input);
 
   const searchBtn = document.createElement("button");
@@ -685,7 +699,7 @@ function renderFacebookSearchBlock(displayName) {
   const openSearch = () => {
     const term = input.value.trim();
     if (!term) return;
-    const url = `https://www.facebook.com/search/posts/?q=${encodeURIComponent(term)}`;
+    const url = `https://www.facebook.com/profile/${encodeURIComponent(profileId)}/search/?q=${encodeURIComponent(term)}`;
     chrome.tabs.create({ url });
   };
   searchBtn.addEventListener("click", openSearch);

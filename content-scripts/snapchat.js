@@ -3,7 +3,7 @@
 // Änderungsdatum stehen zusätzlich als Klartext-Zeitstempel im Seitenquelltext.
 
 function getSnapchatUsernameFromUrl() {
-  const match = window.location.pathname.match(/^\/add\/([^/]+)/);
+  const match = window.location.pathname.match(/^\/(?:add\/|@)([^/]+)/);
   return match ? match[1] : null;
 }
 
