@@ -4,6 +4,17 @@ Chrome-Extension, die im Popup die Profil-ID und – sofern verfügbar – weite
 Infos (Erstellungsdatum, Follower, Bio, Verifizierungsstatus, …) zur aktuell
 geöffneten Social-Media-Profilseite anzeigt.
 
+---
+## ☕ Support this project
+
+If this integration saves you time, consider supporting its development:
+
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-%E2%9D%A4-red?logo=github)](https://github.com/sponsors/OleSint)
+
+This project is and will remain free and open source.
+--- 
+<br>
+
 ## Unterstützte Plattformen (Stand v0.1.0)
 
 | Plattform   | Profil-ID | Erstellungsdatum | Weitere Infos |
