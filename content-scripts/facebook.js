@@ -94,3 +94,85 @@ function extractFacebook() {
 }
 
 registerExtractor("Facebook", extractFacebook);
+
+// Facebook hat keine öffentliche API für Kommentare – ohne Aufklappen der
+// "X weitere Kommentare"/"X Antworten"-Buttons würde eine spätere Sicherung
+// nur den anfangs gerenderten Bruchteil der Kommentare erfassen (ähnliches
+// Grundproblem wie die Virtualisierung bei anderen Plattformen, hier aber
+// ohne API-Ausweg lösbar). Gleiches Prinzip nutzt die Übersetzen-Funktion:
+// "Übersetzung anzeigen"-Buttons pro Kommentar anklicken, statt auf eine
+// eventuelle Sammel-Übersetzen-Funktion von Facebook zu warten, deren
+// genaues Verhalten sich nicht zuverlässig antizipieren lässt. Erkennung
+// über Textmuster statt über Facebooks bei jedem Deploy neu generierte,
+// instabile CSS-Klassennamen.
+const FACEBOOK_EXPAND_PATTERNS = [
+  /weitere[nr]?\s+kommentare/i,
+  /alle\s+\d+\s+kommentare/i,
+  /\d+\s+antworten?/i,
+  /view\s+more\s+comments/i,
+  /view\s+\d+\s+repl/i,
+  /\d+\s+repl(y|ies)/i,
+  /see\s+more\s+comments/i,
+  /vorherige\s+kommentare/i,
+];
+
+const FACEBOOK_TRANSLATE_PATTERNS = [
+  /übersetzung anzeigen/i,
+  /^übersetzen$/i,
+  /alle kommentare übersetzen/i,
+  /see translation/i,
+  /^translate$/i,
+  /translate all comments/i,
+];
+
+function findButtonsMatchingPatterns(patterns) {
+  return Array.from(document.querySelectorAll('[role="button"]')).filter((el) => {
+    const text = (el.textContent || "").trim();
+    if (!text || text.length > 60) return false;
+    return patterns.some((re) => re.test(text));
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Klickt wiederholt alle aktuell sichtbaren, zu den Mustern passenden
+// Buttons, bis mehrere Runden hintereinander nichts Neues mehr auftaucht
+// (z. B. weil weitere Kommentare/Übersetzungen nach dem Klicken nachladen)
+// oder ein Sicherheitslimit erreicht ist.
+async function clickMatchingButtonsUntilIdle(patterns, maxClicks = 300, maxIdleRounds = 5) {
+  let clicks = 0;
+  let idleRounds = 0;
+
+  while (clicks < maxClicks && idleRounds < maxIdleRounds) {
+    const buttons = findButtonsMatchingPatterns(patterns);
+    if (!buttons.length) {
+      idleRounds++;
+      await sleep(400);
+      continue;
+    }
+    idleRounds = 0;
+    for (const btn of buttons) {
+      if (clicks >= maxClicks) break;
+      try {
+        btn.click();
+        clicks++;
+      } catch (e) {
+        // Button ggf. schon durch einen vorherigen Klick aus dem DOM entfernt – überspringen
+      }
+      await sleep(200);
+    }
+    await sleep(400);
+  }
+  return clicks;
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || (msg.type !== "EXPAND_FACEBOOK_COMMENTS" && msg.type !== "TRANSLATE_FACEBOOK_COMMENTS")) return;
+  const patterns = msg.type === "EXPAND_FACEBOOK_COMMENTS" ? FACEBOOK_EXPAND_PATTERNS : FACEBOOK_TRANSLATE_PATTERNS;
+  clickMatchingButtonsUntilIdle(patterns)
+    .then((clicks) => sendResponse({ success: true, clicks }))
+    .catch((err) => sendResponse({ success: false, error: err && err.message ? err.message : String(err) }));
+  return true;
+});

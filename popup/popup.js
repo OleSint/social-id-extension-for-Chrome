@@ -227,6 +227,10 @@ function renderData(platform, data) {
     );
   }
 
+  if (platform === "Facebook" && data["Gepostet am"]) {
+    renderFacebookCommentActionsBlock();
+  }
+
   const postsLink = getPostsLinkForPlatform(platform, data);
   if (postsLink) {
     renderLinkButtonBlock(postsLink.label, postsLink.url);
@@ -667,6 +671,61 @@ function renderLinkButtonBlock(label, url) {
   block.appendChild(btn);
 
   contentEl.appendChild(block);
+}
+
+// Facebook hat keine öffentliche Kommentar-API. "Weitere Kommentare"/
+// "X Antworten"-Buttons müssen daher angeklickt werden, um an vollständige
+// Kommentarbäume zu kommen (relevant für eine spätere Sicherung). Analog
+// dazu: "Übersetzung anzeigen"-Buttons pro Kommentar anklicken, statt auf
+// eine eventuelle Sammel-Übersetzen-Funktion von Facebook zu warten. Der
+// Original-Autor des zugrundeliegenden Ausklapp-Mechanismus (Userscript
+// "Facebook Expand All Comments") weist selbst darauf hin, dass sehr viele
+// automatisierte Klicks in kurzer Zeit theoretisch ein Account-Risiko
+// darstellen können – daher der gemeinsame Warnhinweis direkt im Block.
+function renderFacebookCommentActionsBlock() {
+  const block = document.createElement("div");
+  block.className = "image-block";
+
+  const warning = document.createElement("p");
+  warning.className = "hint";
+  warning.textContent =
+    "⚠️ Beide Aktionen klicken wiederholt automatisch Buttons auf der Seite an – laut Facebook theoretisch mit einem (geringen) Risiko für das Konto verbunden, wenn sehr viele automatisierte Klicks in kurzer Zeit erfolgen.";
+  block.appendChild(warning);
+
+  const row = document.createElement("div");
+  row.className = "search-row";
+
+  const expandBtn = document.createElement("button");
+  expandBtn.className = "download-btn";
+  expandBtn.textContent = "Alle Kommentare ausklappen";
+  expandBtn.addEventListener("click", () => runFacebookCommentAction(expandBtn, "EXPAND_FACEBOOK_COMMENTS"));
+  row.appendChild(expandBtn);
+
+  const translateBtn = document.createElement("button");
+  translateBtn.className = "download-btn";
+  translateBtn.textContent = "Alle Kommentare übersetzen";
+  translateBtn.addEventListener("click", () => runFacebookCommentAction(translateBtn, "TRANSLATE_FACEBOOK_COMMENTS"));
+  row.appendChild(translateBtn);
+
+  block.appendChild(row);
+  contentEl.appendChild(block);
+}
+
+async function runFacebookCommentAction(btn, messageType) {
+  btn.disabled = true;
+  btn.textContent = "Wird ausgeführt…";
+  try {
+    const tab = await getActiveTab();
+    const response = await chrome.tabs.sendMessage(tab.id, { type: messageType });
+    if (!response || !response.success) {
+      throw new Error((response && response.error) || "Unbekannter Fehler.");
+    }
+    btn.textContent = `Fertig (${response.clicks} Klicks)`;
+  } catch (e) {
+    btn.textContent = `Fehler: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // Eine reine "Im Profil suchen" (facebook.com/profile/<id>/search/) findet laut

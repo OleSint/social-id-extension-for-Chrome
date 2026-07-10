@@ -262,6 +262,35 @@ Bei X/Twitter, Threads und Pinterest ist das (noch) nicht umgesetzt (gleiche
 Gründe wie bei der Profil-Sicherung: technisch möglich, aber bruchanfälliger
 über interne, undokumentierte APIs).
 
+## Facebook: Kommentare ausklappen & übersetzen
+
+Facebook hat keine öffentliche API für Kommentare. Ohne die
+„Weitere Kommentare"/„X Antworten"-Buttons anzuklicken, wäre bei einer
+späteren Sicherung nur der anfangs gerenderte Bruchteil der Kommentare
+erfassbar – ähnliches Grundproblem wie die Virtualisierung bei anderen
+Plattformen, hier aber mangels API nur durch tatsächliches Klicken lösbar.
+Dasselbe Prinzip gilt fürs Übersetzen: statt auf eine eventuelle
+Sammel-Übersetzen-Funktion von Facebook zu warten (deren genaues Verhalten
+sich nicht zuverlässig antizipieren lässt), klickt die Extension die
+„Übersetzung anzeigen"-Buttons einzeln je Kommentar an.
+
+Auf Facebook-Beitragsseiten erscheinen daher zwei Buttons: „Alle Kommentare
+ausklappen" und „Alle Kommentare übersetzen". Beide suchen wiederholt nach
+Buttons, deren Text zu bekannten Mustern passt (z. B. „X weitere
+Kommentare"/„X Antworten"/„View more comments" fürs Ausklappen,
+„Übersetzung anzeigen"/„See translation" fürs Übersetzen – jeweils deutsch
+und englisch), klicken sie, warten kurz und wiederholen das, bis mehrere
+Runden hintereinander nichts Neues mehr gefunden wird oder ein
+Sicherheitslimit (300 Klicks) erreicht ist. Bewusst über den sichtbaren
+**Text** der Buttons erkannt, nicht über Facebooks bei jedem Deploy neu
+generierte CSS-Klassennamen (die wären noch instabiler).
+
+Grundlage ist der Mechanismus des Userscripts
+["Facebook Expand All Comments"](https://greasyfork.org/en/scripts/581285-facebook-expand-all-comments)
+– dessen Autor selbst darauf hinweist, dass sehr viele automatisierte Klicks
+in kurzer Zeit theoretisch ein Risiko für das Konto darstellen können. Das
+Popup zeigt diesen Hinweis daher deutlich über beiden Buttons an.
+
 ## Geplant
 
 - Änderungs-Tracking: eine gespeicherte Profil-Sicherung später erneut
